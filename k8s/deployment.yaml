@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-test-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: my-test-app
+  template:
+    metadata:
+      labels:
+        app: my-test-app
+    spec:
+      containers:
+      - name: my-test-app-container
+        # ↓↓↓ 이 부분을 GitHub Actions가 자동으로 수정할 것입니다! ↓↓↓
+        image: hansclub/my-cicd-test:latest 
+        ports:
+        - containerPort: 8080

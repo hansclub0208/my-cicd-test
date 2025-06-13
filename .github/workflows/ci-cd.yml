@@ -1,0 +1,59 @@
+name: CI/CD Pipeline for Argo CD
+
+# main 브랜치에 push가 발생했을 때 이 워크플로우를 실행합니다.
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest # 이 작업은 ubuntu 최신 버전에서 실행됩니다.
+
+    steps:
+      # 1. GitHub 저장소의 코드를 runner로 체크아웃합니다.
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # 2. Docker Hub에 로그인합니다. (GitHub Secrets 사용)
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 3. Docker 이미지에 사용할 메타데이터(태그 등)를 설정합니다.
+      #    여기서는 Git 커밋 해시(SHA)의 앞 7자리를 이미지 태그로 사용합니다.
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: hansclub/my-cicd-test 
+      # 본인 Docker Hub 계정/이미지 이름  
+          tags: |
+            type=sha,prefix=,suffix=,format=short
+
+      # 4. Docker 이미지를 빌드하고 Docker Hub에 푸시합니다.
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      # ★★★★★ 5. Kubernetes Manifest 파일 업데이트 ★★★★★
+      # 여기가 Argo CD를 트리거하는 핵심 단계입니다.
+      - name: Update Kubernetes manifest
+        run: |
+          # sed 명령어를 사용해 deployment.yaml 파일의 image 태그를 방금 빌드한 이미지 태그로 변경합니다.
+          # 예: image: hansclub/my-cicd-test:latest -> image: hansclub/my-cicd-test:a1b2c3d
+          sed -i "s|image:.*|image: ${{ steps.meta.outputs.tags }}|g" k8s/deployment.yaml
+          
+      # 6. 변경된 manifest 파일을 다시 GitHub 저장소에 커밋하고 푸시합니다.
+      - name: Commit and push manifest changes
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add k8s/deployment.yaml
+          git commit -m "CI: Update image tag to ${{ steps.meta.outputs.tags }}"
+          git push
